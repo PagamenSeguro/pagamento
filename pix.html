@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pagamento da Entrada - Pix R$ 89,90</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>body{font-family:'Inter',sans-serif}</style>
+</head>
+<body class="bg-gray-100">
+  <header class="bg-[#FFE600] shadow-md">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-center sm:justify-start">
+      <img src="images/Logotipo_MercadoLivre.png" alt="Logo" class="h-8 w-auto">
+    </div>
+  </header>
+
+  <main class="container mx-auto p-4 md:p-8">
+    <div class="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="md:col-span-2 bg-white rounded-2xl shadow-lg p-6">
+        <h1 class="text-2xl md:text-3xl font-semibold text-center text-gray-800">
+          Falta pouco! Para finalizar a compra,<br class="hidden md:block"/> escaneie o QR Code abaixo.
+        </h1>
+
+        <div id="timerWrap" class="text-center text-gray-600 mt-4">
+          O código expira em: <span id="timer" class="font-semibold text-red-600">10:00</span>
+        </div>
+
+        <div class="mt-6 flex items-center justify-center">
+          <div class="border border-gray-200 rounded-xl p-4">
+            <img id="qrImg" src="" alt="QR Code Pix" class="w-64 h-64 object-contain" />
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Pix Copia e Cola</label>
+          <div class="flex gap-2">
+            <input id="pixPayload" class="flex-1 border border-gray-300 rounded-lg p-3 text-sm" readonly value="">
+            <button id="copyBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 rounded-lg">Copiar código</button>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">O valor <strong>R$ 89,90</strong> está fixado no QR Code e não pode ser alterado.</p>
+        </div>
+      </div>
+
+      <aside class="bg-white rounded-2xl shadow-lg p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-2">Detalhes da compra</h2>
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-gray-600">Valor total:</span>
+          <span class="text-emerald-600 font-semibold">R$ 89,90</span>
+        </div>
+
+        <h3 class="text-lg font-semibold text-gray-800 mt-6 mb-2">Instruções para pagamento</h3>
+        <ul class="space-y-3 text-gray-700">
+          <li class="flex items-start gap-3"><div class="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">💳</div><p>Abra o app do seu banco e entre no ambiente Pix.</p></li>
+          <li class="flex items-start gap-3"><div class="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">🔍</div><p>Escolha <strong>Pagar com QR Code</strong> ou <strong>Pix Copia e Cola</strong>.</p></li>
+          <li class="flex items-start gap-3"><div class="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">✅</div><p>Confira as informações e conclua o pagamento.</p></li>
+        </ul>
+
+        <div id="statusBox" class="mt-6 p-3 text-sm rounded-md bg-gray-50 border border-gray-200 text-gray-700">
+          Status: <span id="statusText" class="font-semibold">gerando QR...</span>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost:3000";
+    const TEN_MIN_MS = 10 * 60 * 1000;
+    let paymentId = null;
+    let countdownInterval = null;
+    let pollInterval = null;
+    let deadline = Date.now() + TEN_MIN_MS;
+
+    function formatTime(ms) {
+      const s = Math.max(0, Math.floor(ms/1000));
+      const mm = String(Math.floor(s/60)).padStart(2,'0');
+      const ss = String(s % 60).padStart(2,'0');
+      return `${mm}:${ss}`;
+    }
+
+    function startTimer() {
+      const el = document.getElementById('timer');
+      el.textContent = formatTime(deadline - Date.now());
+      countdownInterval = setInterval(async () => {
+        const remain = deadline - Date.now();
+        el.textContent = formatTime(remain);
+        if (remain <= 0) {
+          clearInterval(countdownInterval);
+          document.getElementById('statusText').textContent = "expirado";
+          document.getElementById('copyBtn').disabled = true;
+          document.getElementById('copyBtn').classList.add('opacity-60','cursor-not-allowed');
+          if (paymentId) fetch(`${API_BASE}/api/pix/cancel/${paymentId}`, { method: "POST" });
+        }
+      }, 1000);
+    }
+
+    async function createPix() {
+      try {
+        const res = await fetch(`${API_BASE}/api/pix/create`, { method: "POST" });
+        const data = await res.json();
+        if (data.errors) throw new Error(JSON.stringify(data.errors));
+
+        paymentId = data.id;
+        document.getElementById('statusText').textContent = "aguardando pagamento";
+        document.getElementById('qrImg').src = `data:image/png;base64,${data.encodedImage}`;
+        document.getElementById('pixPayload').value = data.payload;
+        startTimer();
+        startPolling();
+      } catch (e) {
+        console.error(e);
+        document.getElementById('statusText').textContent = "erro ao gerar QR";
+      }
+    }
+
+    function startPolling() {
+      pollInterval = setInterval(async () => {
+        if (!paymentId) return;
+        const res = await fetch(`${API_BASE}/api/pix/status/${paymentId}`);
+        const data = await res.json();
+        if (data.status) {
+          document.getElementById('statusText').textContent = data.status.toLowerCase();
+          if (data.status === "RECEIVED" || data.status === "CONFIRMED") {
+            clearInterval(pollInterval);
+            clearInterval(countdownInterval);
+            document.getElementById('copyBtn').disabled = true;
+            document.getElementById('copyBtn').classList.add('opacity-60','cursor-not-allowed');
+          }
+        }
+      }, 3000);
+    }
+
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      const el = document.getElementById('pixPayload');
+      el.select(); el.setSelectionRange(0, 99999);
+      try {
+        await navigator.clipboard.writeText(el.value);
+        const btn = document.getElementById('copyBtn');
+        const original = btn.textContent;
+        btn.textContent = "Copiado!";
+        setTimeout(()=>btn.textContent=original, 1200);
+      } catch {}
+    });
+
+    createPix();
+  </script>
+</body>
+</html>
