@@ -9,6 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🔑 Variáveis principais
 const ASAAS_URL = "https://api.asaas.com/v3";
 const ASAAS_KEY = process.env.ASAAS_API_KEY;
 
@@ -60,7 +61,7 @@ app.post("/api/pix/create", async (req, res) => {
   }
 });
 
-// 📊 Consultar status
+// 📊 Consultar status do pagamento
 app.get("/api/pix/status/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -79,7 +80,7 @@ app.get("/api/pix/status/:id", async (req, res) => {
   }
 });
 
-// ❌ Cancelar pagamento (se expirar)
+// ❌ Cancelar pagamento (caso expire)
 app.post("/api/pix/cancel/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -99,4 +100,11 @@ app.post("/api/pix/cancel/:id", async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("🚀 Backend rodando na porta 3000"));
+// 🌐 Rota raiz (teste rápido)
+app.get("/", (req, res) => {
+  res.send("✅ API Pix funcionando!");
+});
+
+// 🚀 Porta dinâmica (Render usa process.env.PORT)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Servidor online na porta ${PORT}`));
